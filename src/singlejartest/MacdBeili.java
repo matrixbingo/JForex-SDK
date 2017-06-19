@@ -12,22 +12,26 @@ import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
+
 public class MacdBeili implements IStrategy {
 
     public static final int HIST = 2;
 
+    private IOrder order;
     private IEngine engine;
     private IConsole console;
     private IHistory history;
+    private IContext context;
     private IIndicators indicators;
+
     private int counter = 0;
-    private IOrder order;
+
     @Configurable("Instrument")
     public Instrument instrument = Instrument.EURUSD;
-    @Configurable("Period")
-    public Period selectedPeriod = Period.TEN_MINS;
+    @Configurable("defaultPeriod")
+    public Period defaultPeriod = Period.THIRTY_MINS;
     @Configurable("Offer side")
-    public OfferSide offerSide = OfferSide.BID;
+    public OfferSide offerSide = OfferSide.ASK;
     @Configurable("Slippage")
     public double slippage = 1;
     @Configurable("Amount")
@@ -54,6 +58,7 @@ public class MacdBeili implements IStrategy {
 
     @Override
     public void onStart(IContext context) throws JFException {
+        this.context = context;
         this.console = context.getConsole();
         this.indicators = context.getIndicators();
         this.history = context.getHistory();
@@ -69,8 +74,11 @@ public class MacdBeili implements IStrategy {
     @Override
     public void onBar(Instrument instrument, Period period, IBar askBar, IBar bidBar) throws JFException {
 
-        if (period != this.selectedPeriod || instrument != this.instrument) {
+        if (period != this.defaultPeriod || instrument != this.instrument) {
             return;
+        }
+        if(this.isDiBeili(instrument)){
+
         }
     }
 
@@ -107,11 +115,14 @@ public class MacdBeili implements IStrategy {
         List<Double> macdlist = new ArrayList<>();
         List<MacdDto> oddList = new ArrayList<>();
         List<MacdDto> eveList = new ArrayList<>();
+        List<IBar> askBarList = new ArrayList<>();
 
         for (int i = 0; i < 500; i++) {
-            double[] macd0 = this.indicators.macd(instrument, this.selectedPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i);
-            double[] macd1 = this.indicators.macd(instrument, this.selectedPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i + 1);
+            IBar askBar = this.context.getHistory().getBar(instrument, defaultPeriod, offerSide, i);
+            double[] macd0 = this.indicators.macd(instrument, this.defaultPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i);
+            double[] macd1 = this.indicators.macd(instrument, this.defaultPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i + 1);
             macdlist.add(i, macd0[HIST]);
+            askBarList.add(askBar);
             //1、3、5...
             if (macd0[HIST] > 0 && macd1[HIST] <= 0) {
                 flag = true;
@@ -136,13 +147,19 @@ public class MacdBeili implements IStrategy {
             MacdDto macdDto3 = oddList.get(1);
             MacdDto macdDto4 = eveList.get(1);
             if(macdDto2.getShift() - macdDto1.getShift() > leng && macdDto3.getShift() - macdDto2.getShift() > leng && macdDto4.getShift() - macdDto3.getShift() > leng){
-                if(this.getMaxMinDouble(macdlist, macdDto1.getShift(), macdDto2.getShift()) > );
+                Map<String, Double> map0 = this.getMaxMinDouble(macdlist, macdDto1.getShift(), macdDto2.getShift());
+                Map<String, Double> map1 = this.getMaxMinDouble(macdlist, macdDto3.getShift(), macdDto4.getShift());
+                if(map0.get("min") > map1.get("min")){
+
+                }
             }
         }
         return false;
     }
 
-    private List<MacdDto> sortAsc(List<MacdDto> list) {
+
+
+    private List<MacdDto> sortMacdAsc(List<MacdDto> list) {
         Ordering<MacdDto> ordering = Ordering.from(new Comparator<MacdDto>() {
             @Override
             public int compare(MacdDto o1, MacdDto o2) {
@@ -153,8 +170,9 @@ public class MacdBeili implements IStrategy {
     }
 
     private Map<String, MacdDto> getMaxMinMacd(List<MacdDto> list, int bin, int end) {
+        this.initBinEnd(bin, end);
         list = list.subList(bin - 1, end);
-        final List<MacdDto> _list = sortAsc(list);
+        final List<MacdDto> _list = sortMacdAsc(list);
         return new HashMap<String, MacdDto>() {{
             put("max", _list.get(_list.size() - 1));
             put("min", _list.get(0));
@@ -162,6 +180,7 @@ public class MacdBeili implements IStrategy {
     }
 
     private Map<String, Double> getMaxMinDouble(List<Double> list, int bin, int end) {
+        this.initBinEnd(bin, end);
         list = list.subList(bin - 1, end);
         final List<Double> _list = Ordering.natural().sortedCopy(list);
         return new HashMap<String, Double>() {{
@@ -170,16 +189,12 @@ public class MacdBeili implements IStrategy {
         }};
     }
 
-    private double getMin(List<Double> macdlist, int bin, int end){
-        if(bin < end){
+    private void initBinEnd(int bin, int end){
+        if (bin < end) {
             int temp = bin;
             bin = end;
             end = temp;
         }
-        for(int i = end; i<bin ; i++){
-
-        }
-        return 0;
     }
 
     public void onTick(Instrument instrument, ITick tick) throws JFException {
