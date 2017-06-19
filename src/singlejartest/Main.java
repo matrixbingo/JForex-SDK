@@ -132,7 +132,7 @@ public class Main {
                 
         //start the strategy
         LOGGER.info("Starting strategy");
-        client.startStrategy(new MA_Play());
+        client.startStrategy(new MACDsignal());
         //now it's running
     }
 }
