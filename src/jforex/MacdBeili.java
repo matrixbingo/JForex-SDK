@@ -1,30 +1,42 @@
-package singlejartest;
+package jforex;
 
 
 import com.dukascopy.api.*;
 import com.dukascopy.api.IEngine.OrderCommand;
 import com.dukascopy.api.IIndicators.AppliedPrice;
+import com.dukascopy.api.drawings.IChartObjectFactory;
+import com.dukascopy.api.drawings.ISignalUpChartObject;
 import com.dukascopy.api.indicators.IIndicator;
+import com.google.common.base.Function;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 import com.google.common.primitives.Doubles;
 
+import java.awt.*;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.List;
 
-
+@RequiresFullAccess
+@Library("C:\\Work\\.m2\\repository\\com\\google\\guava\\guava\\21.0\\guava-21.0.jar;C:\\Work\\.m2\\repository\\org\\apache\\commons\\commons-lang3\\3.4\\commons-lang3-3.4.jar")
 public class MacdBeili implements IStrategy {
 
+    private int counter = 0;
+    final private int capacity = 1000000;
     public static final int HIST = 2;
+    private static final String DATE_FORMAT_NOW = "yyyyMMdd_HHmmss";
 
     private IOrder order;
+    private IChart chart;
     private IEngine engine;
     private IConsole console;
     private IHistory history;
     private IContext context;
     private IIndicators indicators;
+    private IBar currBar;
 
-    private int counter = 0;
+
 
     @Configurable("Instrument")
     public Instrument instrument = Instrument.EURUSD;
@@ -64,16 +76,19 @@ public class MacdBeili implements IStrategy {
         this.history = context.getHistory();
         this.engine = context.getEngine();
 
-        IChart chart = context.getChart(instrument);
-        if (chart != null) {
+        this.chart = context.getChart(instrument);
+        if (this.chart == null) {
+            this.console.getErr().println("No chart opened, can't plot indicators.");
+            this.context.stop();
+        }else if(this.chart != null) {
             chart.add(indicators.getIndicator("MACD"), new Object[]{fastMACDPeriod, slowMACDPeriod, signalMACDPeriod});
         }
     }
 
-
     @Override
     public void onBar(Instrument instrument, Period period, IBar askBar, IBar bidBar) throws JFException {
-
+        this.currBar = askBar;
+        //this.console.getInfo().println(this.getCurrentTime(this.currBar.getTime()));
         if (period != this.defaultPeriod || instrument != this.instrument) {
             return;
         }
@@ -112,16 +127,16 @@ public class MacdBeili implements IStrategy {
         int leng = 4;
         int size = 3;
         boolean flag = false;
-        List<Double> macdlist = new ArrayList<>();
         List<MacdDto> oddList = new ArrayList<>();
         List<MacdDto> eveList = new ArrayList<>();
+        List<Double> macdlist = new ArrayList<>();
         List<IBar> askBarList = new ArrayList<>();
 
         for (int i = 0; i < 500; i++) {
             IBar askBar = this.context.getHistory().getBar(instrument, defaultPeriod, offerSide, i);
             double[] macd0 = this.indicators.macd(instrument, this.defaultPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i);
             double[] macd1 = this.indicators.macd(instrument, this.defaultPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i + 1);
-            macdlist.add(i, macd0[HIST]);
+            macdlist.add(macd0[HIST] * capacity);
             askBarList.add(askBar);
             //1、3、5...
             if (macd0[HIST] > 0 && macd1[HIST] <= 0) {
@@ -140,24 +155,51 @@ public class MacdBeili implements IStrategy {
                 break;
             }
         }
-
+        this.console.getInfo().println(this.getCurrentTime(this.currBar.getTime()) + "macdlist:" + ToString.listToString(macdlist));
+        this.console.getInfo().println(this.getCurrentTime(this.currBar.getTime()) + "askBarList:" + ToString.iBarlistToString(askBarList));
         if (oddList.size() > size && eveList.size() > size) {
-            MacdDto macdDto1 = oddList.get(0);
-            MacdDto macdDto2 = eveList.get(0);
-            MacdDto macdDto3 = oddList.get(1);
-            MacdDto macdDto4 = eveList.get(1);
-            if(macdDto2.getShift() - macdDto1.getShift() > leng && macdDto3.getShift() - macdDto2.getShift() > leng && macdDto4.getShift() - macdDto3.getShift() > leng){
-                Map<String, Double> map0 = this.getMaxMinDouble(macdlist, macdDto1.getShift(), macdDto2.getShift());
-                Map<String, Double> map1 = this.getMaxMinDouble(macdlist, macdDto3.getShift(), macdDto4.getShift());
-                if(map0.get("min") > map1.get("min")){
-
+            MacdDto oddMacd1 = oddList.get(0);
+            MacdDto oddMacd2 = eveList.get(0);
+            MacdDto eveMacd3 = oddList.get(1);
+            MacdDto eveMacd4 = eveList.get(1);
+            if(oddMacd2.getShift() - oddMacd1.getShift() > leng && eveMacd3.getShift() - oddMacd2.getShift() > leng && eveMacd4.getShift() - eveMacd3.getShift() > leng){
+                Map<String, Double> macd_map0 = this.getMaxMinDouble(macdlist, oddMacd1.getShift(), oddMacd2.getShift());
+                Map<String, Double> macd_map1 = this.getMaxMinDouble(macdlist, eveMacd3.getShift(), eveMacd4.getShift());
+                Map<String, Double> bar_map0 = this.getMaxMinBar(askBarList, oddMacd1.getShift(), oddMacd2.getShift());
+                Map<String, Double> bar_map1 = this.getMaxMinBar(askBarList, eveMacd3.getShift(), eveMacd4.getShift());
+                if(macd_map0.get("min") > macd_map1.get("min") && bar_map0.get("min") < bar_map1.get("min")){
+                    this.createSignalUp();
                 }
             }
         }
         return false;
     }
 
+    private Map<String, Double> getMaxMinBar(List<IBar> list, int bin, int end){
+        this.initBinEnd(bin, end);
+        list = list.subList(bin - 1, end);
 
+        Ordering<IBar> lowOrdering = Ordering.natural().nullsFirst().onResultOf(new Function<IBar, Double>() {
+            @Override
+            public Double apply(IBar bar) {
+                return bar.getLow();
+            }
+        });
+        Ordering<IBar> highOrdering = Ordering.natural().reverse().nullsFirst().onResultOf(new Function<IBar, Double>() {
+            @Override
+            public Double apply(IBar bar) {
+                return bar.getHigh();
+            }
+        });
+
+        final List<IBar> lowlist = lowOrdering.sortedCopy(list);
+        final List<IBar> highlist = highOrdering.sortedCopy(list);
+
+        return new HashMap<String, Double>() {{
+            put("max", highlist.get(0).getHigh());
+            put("min", lowlist.get(0).getLow());
+        }};
+    }
 
     private List<MacdDto> sortMacdAsc(List<MacdDto> list) {
         Ordering<MacdDto> ordering = Ordering.from(new Comparator<MacdDto>() {
@@ -195,6 +237,28 @@ public class MacdBeili implements IStrategy {
             bin = end;
             end = temp;
         }
+    }
+
+    private void createSignalUp() throws JFException {
+        try {
+            String chartKey = this.getChartKey("signalUp");
+            console.getInfo().println("chartKey: " + chartKey);
+            IChartObject chartObject = this.chart.get(chartKey);
+            console.getInfo().println("chartObject : " + chartObject);
+            if (chartObject == null) {
+                console.getInfo().println("this.currBar.getTime(): " + this.currBar.getTime());
+                IChartObjectFactory chartObjectFactory = chart.getChartObjectFactory();
+                ISignalUpChartObject signalArr = chartObjectFactory.createSignalUp(chartKey, this.currBar.getTime(), currBar.getLow() - 0.0001);
+                signalArr.setStickToCandleTimeEnabled(false);
+                signalArr.setColor(Color.YELLOW);
+                this.chart.add(signalArr);
+            }
+        } catch (Exception e) {
+            console.getOut().println("Exception : " + e.toString());
+        }
+    }
+    private String getChartKey(String type) {
+        return type + this.currBar.getTime();
     }
 
     public void onTick(Instrument instrument, ITick tick) throws JFException {
@@ -329,5 +393,100 @@ public class MacdBeili implements IStrategy {
             }
         };
         return sdf.format(time);
+    }
+
+    private String getCurrentTime(long time) {
+        SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT_NOW);
+        return sdf.format(time);
+    }
+}
+
+
+class ToString {
+
+    /**
+     * 定义分割常量 （#在集合中的含义是每个元素的分割，|主要用于map类型的集合用于key与value中的分割）
+     */
+    private static final String SEP1 = "; ";
+    private static final String SEP2 = "|";
+
+    /**
+     * List转换String
+     *
+     * @param list :需要转换的List
+     * @return String转换后的字符串
+     */
+    public static String listToString(List<?> list) {
+        StringBuffer sb = new StringBuffer();
+        if (list != null && list.size() > 0) {
+            for (int i = 0; i < list.size(); i++) {
+                if (list.get(i) == null || list.get(i) == "") {
+                    continue;
+                }
+                // 如果值是list类型则调用自己
+                if (list.get(i) instanceof List) {
+                    sb.append(listToString((List<?>) list.get(i)) + "");
+                    sb.append(SEP1);
+                } else if (list.get(i) instanceof Map) {
+                    sb.append(mapToString((Map<?, ?>) list.get(i)) + "");
+                    sb.append(SEP1);
+                } else {
+                    sb.append(list.get(i));
+                    sb.append(SEP1);
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    public static String iBarlistToString(List<IBar> list) {
+        StringBuffer sb = new StringBuffer();
+        IBar bar;
+        if (list != null && list.size() > 0) {
+            for (int i = 0; i < list.size(); i++) {
+                bar = list.get(i);
+                sb.append("[");
+                sb.append(bar.getHigh());
+                sb.append(",");
+                sb.append(bar.getLow());
+                sb.append("]; ");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Map转换String
+     *
+     * @param map :需要转换的Map
+     * @return String转换后的字符串
+     */
+    public static String mapToString(Map<?, ?> map) {
+        StringBuffer sb = new StringBuffer();
+        // 遍历map
+        for (Object obj : map.keySet()) {
+            if (obj == null) {
+                continue;
+            }
+            Object key = obj;
+            Object value = map.get(key);
+            if (value instanceof List<?>) {
+                sb.append(key.toString() + SEP1 + listToString((List<?>) value));
+                sb.append(SEP2);
+            } else if (value instanceof Map<?, ?>) {
+                sb.append(key.toString() + SEP1
+                        + mapToString((Map<?, ?>) value));
+                sb.append(SEP2);
+            } else {
+                sb.append(key.toString() + SEP1 + value.toString());
+                sb.append(SEP2);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void fun1() {
+        List<Double> macdlist = Lists.newArrayList(1.2, 3.2, 4.3);
+        System.out.println(listToString(macdlist));
     }
 }
