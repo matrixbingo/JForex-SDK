@@ -89,10 +89,10 @@ public class GUIModeMultiChart extends JFrame implements ITesterUserInterface, I
     
 	//url of the DEMO jnlp
     private static String jnlpUrl = "https://www.dukascopy.com/client/demo/jclient/jforex.jnlp";
-    //user name
-    private static String userName = "userName";
-    //password
-    private static String password = "password";
+	// user name
+	private static String userName = "DEMO2ucBew";
+	// password
+	private static String password = "ucBew";
     public GUIModeMultiChart(){
     	setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		getContentPane().setLayout(new BoxLayout(getContentPane(), BoxLayout.Y_AXIS));

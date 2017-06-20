@@ -88,6 +88,9 @@ public class MacdBeili implements IStrategy {
         public MacdDto(int shift, double[] macd){
             this.shift = shift;
             this.macd = macd;
+            this.macd[0] = macd[0] * 100000;
+            this.macd[1] = macd[1] * 100000;
+            this.macd[2] = macd[2] * 100000;
         }
 
         public int getShift() {
@@ -120,7 +123,7 @@ public class MacdBeili implements IStrategy {
             IBar askBar = this.context.getHistory().getBar(instrument, defaultPeriod, offerSide, i);
             double[] macd0 = this.indicators.macd(instrument, this.defaultPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i);
             double[] macd1 = this.indicators.macd(instrument, this.defaultPeriod, offerSide, appliedPrice, fastMACDPeriod, slowMACDPeriod, signalMACDPeriod, i + 1);
-            macdlist.add(i, macd0[HIST]);
+            macdlist.add(i, macd0[HIST] * 100000);
             askBarList.add(askBar);
             //1、3、5...
             if (macd0[HIST] > 0 && macd1[HIST] <= 0) {
@@ -131,11 +134,11 @@ public class MacdBeili implements IStrategy {
             }
             //2、4、6...
             if (flag && macd0[HIST] <= 0 && macd1[HIST] > 0) {
-                if (eveList.size() > size) {
+                if (eveList.size() < size) {
                     eveList.add(new MacdDto(i, macd0));
                 }
             }
-            if (oddList.size() > size && eveList.size() > size) {
+            if (oddList.size() >= size && eveList.size() >= size) {
                 break;
             }
         }
