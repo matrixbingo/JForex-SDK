@@ -55,7 +55,6 @@ public class MacdBeili implements IStrategy {
         }
     };
 
-
     @Override
     public void onStart(IContext context) throws JFException {
         this.context = context;
